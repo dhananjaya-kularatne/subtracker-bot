@@ -29,7 +29,7 @@ public class Subscription {
     private Long id;
 
     // The user this subscription belongs to
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.LAZY)  // lazy would run only one query
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 

@@ -13,7 +13,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 
 /**
- * Status always starts as either TRIAL or ACTIVE, set by the service layer based on the isTrial flag, never sent directly by the client as an enum.
+ * Status always  starts as either TRIAL or ACTIVE, set by the service layer based on the isTrial flag, never sent directly by the client as an enum.
  */
 @Data
 @NoArgsConstructor

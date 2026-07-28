@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
 /**
  * Represents a Telegram user of the bot.
  *
- * The Telegram chatId is the user's identity in this system — there is no separate login/registration step. The first time a chatId messages the bot,
+ * The Telegram chatId is the user's identity in this system
  * a User record is created for them automatically.
  */
 @Entity

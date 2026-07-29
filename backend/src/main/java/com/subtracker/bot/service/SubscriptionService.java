@@ -75,7 +75,7 @@ public class SubscriptionService {
         subscriptionRepository.deleteById(id);
     }
 
-    // Maps an entity to its client-facing response shape
+    // Maps an entity to its client facing response shape
     private SubscriptionResponse mapToResponse(Subscription subscription) {
         return SubscriptionResponse.builder()
                 .id(subscription.getId())

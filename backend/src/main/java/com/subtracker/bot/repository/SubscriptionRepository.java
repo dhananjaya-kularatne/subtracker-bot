@@ -8,12 +8,17 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface SubscriptionRepository extends JpaRepository<Subscription, Long> {
 
     // All subscriptions belonging to one user — used by /list and /summary
     List<Subscription> findByUser(User user);
+
+    // One subscription by id, but only if it belongs to the given user —
+    // used by the bot's /delete so a user can't touch someone else's row
+    Optional<Subscription> findByIdAndUser(Long id, User user);
 
     // All subscriptions belonging to one user, filtered by status —
     // e.g. only ACTIVE ones for the spend summary

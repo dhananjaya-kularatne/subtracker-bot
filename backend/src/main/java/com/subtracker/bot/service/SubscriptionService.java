@@ -66,13 +66,27 @@ public class SubscriptionService {
         return mapToResponse(subscription);
     }
 
-    // Permanently delete a subscription
+    // Permanently delete a subscription by id (trusted callers only, e.g. the REST controller)
     @Transactional
     public void deleteSubscription(Long id) {
         if (!subscriptionRepository.existsById(id)) {
             throw new ResourceNotFoundException("Subscription not found with id: " + id);
         }
         subscriptionRepository.deleteById(id);
+    }
+
+    /**
+     * Permanently delete a subscription, but only if it belongs to the given user.
+     * Used by the Telegram bot, where the id comes from an untrusted chat message.
+     * A subscription owned by someone else is reported as "not found" — identical to
+     * one that never existed — so the error can't be used to probe for other users' ids.
+     */
+    @Transactional
+    public SubscriptionResponse deleteSubscription(User user, Long id) {
+        Subscription subscription = subscriptionRepository.findByIdAndUser(id, user)
+                .orElseThrow(() -> new ResourceNotFoundException("Subscription not found with id: " + id));
+        subscriptionRepository.delete(subscription);
+        return mapToResponse(subscription);
     }
 
     // Maps an entity to its client facing response shape

@@ -3,6 +3,7 @@ package com.subtracker.bot.service;
 import com.subtracker.bot.dto.CreateSubscriptionRequest;
 import com.subtracker.bot.dto.SubscriptionResponse;
 import com.subtracker.bot.dto.TelegramUpdate;
+import com.subtracker.bot.exception.ResourceNotFoundException;
 import com.subtracker.bot.model.BillingCycle;
 import com.subtracker.bot.model.User;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +33,11 @@ public class TelegramCommandService {
             Usage: /add <name> <amount> <monthly|yearly> <renewal date>
             Example: /add Netflix 1500 monthly 2026-08-15""";
 
+    private static final String DELETE_USAGE = """
+            Usage: /delete <id>
+            Example: /delete 3
+            Run /list to see each subscription's id.""";
+
     public void handleUpdate(TelegramUpdate update) {
 
         // Ignore updates that aren't a plain text message
@@ -51,6 +57,7 @@ public class TelegramCommandService {
             case "/start" -> handleStart(chatId);
             case "/add" -> handleAdd(chatId, text);
             case "/list" -> handleList(chatId);
+            case "/delete" -> handleDelete(chatId, text);
             default -> handleUnknownCommand(chatId);
         }
     }
@@ -86,6 +93,38 @@ public class TelegramCommandService {
         }
         sb.append("\nRemove one with /delete <id>, e.g. /delete ").append(subscriptions.get(0).getId());
         return sb.toString();
+    }
+
+    /**
+     * Handles /delete &lt;id&gt;. The id comes from an untrusted chat message, so the
+     * delete goes through the ownership-checked service path — an id that isn't the
+     * caller's own is reported the same as one that doesn't exist.
+     */
+    private void handleDelete(Long chatId, String text) {
+        String[] tokens = text.split("\\s+");
+
+        if (tokens.length < 2) {
+            telegramApiClient.sendMessage(chatId, "Which one? I need an id.\n\n" + DELETE_USAGE);
+            return;
+        }
+
+        long id;
+        try {
+            id = Long.parseLong(tokens[1]);
+        } catch (NumberFormatException ex) {
+            telegramApiClient.sendMessage(chatId,
+                    "\"" + tokens[1] + "\" isn't a valid id.\n\n" + DELETE_USAGE);
+            return;
+        }
+
+        User user = userService.findOrCreateByTelegramChatId(chatId);
+        try {
+            SubscriptionResponse deleted = subscriptionService.deleteSubscription(user, id);
+            telegramApiClient.sendMessage(chatId, "🗑️ Deleted " + deleted.getName() + ".");
+        } catch (ResourceNotFoundException ex) {
+            telegramApiClient.sendMessage(chatId,
+                    "You don't have a subscription with id " + id + ". Run /list to see yours.");
+        }
     }
 
     private void handleStart(Long chatId) {

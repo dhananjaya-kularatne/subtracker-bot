@@ -13,6 +13,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * Parses incoming Telegram messages into commands and routes them to the appropriate handler. This is the "brain" behind the bot's chat interface —
@@ -49,8 +50,42 @@ public class TelegramCommandService {
         switch (command) {
             case "/start" -> handleStart(chatId);
             case "/add" -> handleAdd(chatId, text);
+            case "/list" -> handleList(chatId);
             default -> handleUnknownCommand(chatId);
         }
+    }
+
+    /**
+     * Handles /list — shows every subscription belonging to the caller, each
+     * prefixed with its id so it can be passed straight to /delete.
+     */
+    private void handleList(Long chatId) {
+        User user = userService.findOrCreateByTelegramChatId(chatId);
+        List<SubscriptionResponse> subscriptions = subscriptionService.getSubscriptionsForUser(user);
+
+        if (subscriptions.isEmpty()) {
+            telegramApiClient.sendMessage(chatId,
+                    "You have no subscriptions yet. Add one with /add.");
+            return;
+        }
+
+        telegramApiClient.sendMessage(chatId, formatSubscriptionList(subscriptions));
+    }
+
+    private String formatSubscriptionList(List<SubscriptionResponse> subscriptions) {
+        StringBuilder sb = new StringBuilder("Your subscriptions:\n");
+        for (SubscriptionResponse sub : subscriptions) {
+            sb.append("\n#%d  %s — %s %s / %s\n     renews %s · %s\n".formatted(
+                    sub.getId(),
+                    sub.getName(),
+                    sub.getCurrency(),
+                    sub.getAmount().toPlainString(),
+                    sub.getBillingCycle().name().toLowerCase(),
+                    sub.getNextRenewalDate(),
+                    sub.getStatus().name().toLowerCase()));
+        }
+        sb.append("\nRemove one with /delete <id>, e.g. /delete ").append(subscriptions.get(0).getId());
+        return sb.toString();
     }
 
     private void handleStart(Long chatId) {

@@ -23,7 +23,7 @@ public class TelegramApiClient {
      * Sends a plain text message to a given Telegram chat.
      * Used for command replies (/add confirmations, /list output) and, later, scheduled reminders.
      */
-    public void sendMessage(Long chatId, String text) {
+    public boolean sendMessage(Long chatId, String text) {
         String url = telegramConfig.getApiBaseUrl() + "/sendMessage";
 
         try {
@@ -33,10 +33,12 @@ public class TelegramApiClient {
                     .body(new SendMessageRequest(chatId, text))
                     .retrieve()
                     .toBodilessEntity();
+            return true;
         } catch (Exception exception) {
             // A failed send (e.g. user blocked the bot) should never crash the caller — log it and move on. Retry/fallback logic can be
             // layered on top of this later if needed.
             log.error("Failed to send Telegram message to chatId {}: {}", chatId, exception.getMessage());
+            return false;
         }
     }
 

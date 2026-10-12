@@ -5,6 +5,7 @@ import com.subtracker.bot.dto.SubscriptionResponse;
 import com.subtracker.bot.exception.ResourceNotFoundException;
 import com.subtracker.bot.model.*;
 import com.subtracker.bot.repository.SubscriptionRepository;
+import com.subtracker.bot.repository.ReminderLogRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,6 +21,7 @@ import java.util.stream.Collectors;
 public class SubscriptionService {
 
     private final SubscriptionRepository subscriptionRepository;
+    private final ReminderLogRepository reminderLogRepository;
 
     // Create a new subscription for a given user
     @Transactional
@@ -69,10 +71,10 @@ public class SubscriptionService {
     // Permanently delete a subscription by id (trusted callers only, e.g. the REST controller)
     @Transactional
     public void deleteSubscription(Long id) {
-        if (!subscriptionRepository.existsById(id)) {
-            throw new ResourceNotFoundException("Subscription not found with id: " + id);
-        }
-        subscriptionRepository.deleteById(id);
+        Subscription subscription = subscriptionRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Subscription not found with id: " + id));
+        reminderLogRepository.deleteBySubscription(subscription);
+        subscriptionRepository.delete(subscription);
     }
 
     /**
@@ -85,6 +87,7 @@ public class SubscriptionService {
     public SubscriptionResponse deleteSubscription(User user, Long id) {
         Subscription subscription = subscriptionRepository.findByIdAndUser(id, user)
                 .orElseThrow(() -> new ResourceNotFoundException("Subscription not found with id: " + id));
+        reminderLogRepository.deleteBySubscription(subscription);
         subscriptionRepository.delete(subscription);
         return mapToResponse(subscription);
     }

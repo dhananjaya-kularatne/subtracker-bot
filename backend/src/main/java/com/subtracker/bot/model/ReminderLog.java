@@ -14,7 +14,9 @@ import java.time.LocalDate;
  * Records every notification sent to a user about a Subscription, either a renewal reminder or a trial-to-paid conversion notice
  */
 @Entity
-@Table(name = "reminder_logs")
+@Table(name = "reminder_logs", uniqueConstraints = @UniqueConstraint(
+        name = "uk_reminder_subscription_type_renewal",
+        columnNames = {"subscription_id", "type", "renewal_date"}))
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

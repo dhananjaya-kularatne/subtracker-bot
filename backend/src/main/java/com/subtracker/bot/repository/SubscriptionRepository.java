@@ -4,14 +4,21 @@ import com.subtracker.bot.model.Subscription;
 import com.subtracker.bot.model.SubscriptionStatus;
 import com.subtracker.bot.model.User;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.Collection;
 
 @Repository
 public interface SubscriptionRepository extends JpaRepository<Subscription, Long> {
+
+    // Fetch the user too because scheduled jobs do not have a web request session.
+    @EntityGraph(attributePaths = "user")
+    List<Subscription> findByStatusInAndNextRenewalDateBetween(
+            Collection<SubscriptionStatus> statuses, LocalDate start, LocalDate end);
 
     // All subscriptions belonging to one user — used by /list and /summary
     List<Subscription> findByUser(User user);

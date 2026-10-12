@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 
 /**
  * Records every notification sent to a user about a Subscription, either a renewal reminder or a trial-to-paid conversion notice
@@ -38,6 +39,11 @@ public class ReminderLog {
     @Enumerated(EnumType.STRING)
     @Column(name = "type", nullable = false, length = 30)
     private ReminderType type;
+
+    // Identifies the billing cycle even if the user's reminder window changes.
+    // Nullable to allow existing logs to remain valid when Hibernate adds the column.
+    @Column(name = "renewal_date")
+    private LocalDate renewalDate;
 
     // When this notification was actually sent, set automatically on insert
     @CreationTimestamp

@@ -11,9 +11,15 @@ import org.springframework.stereotype.Component;
 public class ReminderScheduler {
 
     private final ReminderService reminderService;
+    private final SubscriptionLifecycleService subscriptionLifecycleService;
 
     @Scheduled(cron = "${reminder.cron:0 0 9 * * *}", zone = "Asia/Colombo")
     public void sendDueReminders() {
+        try {
+            subscriptionLifecycleService.processDueSubscriptions();
+        } catch (Exception exception) {
+            log.error("Failed to run subscription rollover", exception);
+        }
         try {
             reminderService.sendDueReminders();
         } catch (Exception exception) {

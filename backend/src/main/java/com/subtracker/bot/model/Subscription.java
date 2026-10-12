@@ -59,6 +59,10 @@ public class Subscription {
     @Column(name = "next_renewal_date", nullable = false)
     private LocalDate nextRenewalDate;
 
+    // Retains a failed conversion notice for retry after the subscription becomes ACTIVE.
+    @Column(name = "pending_trial_conversion_date")
+    private LocalDate pendingTrialConversionDate;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

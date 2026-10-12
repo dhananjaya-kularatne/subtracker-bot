@@ -6,6 +6,7 @@ import com.subtracker.bot.dto.TelegramUpdate;
 import com.subtracker.bot.exception.ResourceNotFoundException;
 import com.subtracker.bot.model.BillingCycle;
 import com.subtracker.bot.model.User;
+import com.subtracker.bot.model.SubscriptionStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -60,6 +61,8 @@ public class TelegramCommandService {
             case "/add" -> handleAdd(chatId, text);
             case "/list" -> handleList(chatId);
             case "/delete" -> handleDelete(chatId, text);
+            case "/cancel" -> handleDecision(chatId, text, true);
+            case "/keep" -> handleDecision(chatId, text, false);
             default -> handleUnknownCommand(chatId);
         }
     }
@@ -138,8 +141,52 @@ public class TelegramCommandService {
                   add trial at the end to track a free trial
                 /list - see your subscriptions
                 /delete - remove a subscription
+                /cancel <id> - mark a subscription cancelled and stop reminders
+                /keep <id> - acknowledge a reminder and keep tracking
                 """;
         telegramApiClient.sendMessage(chatId, welcomeMessage);
+    }
+
+    private void handleDecision(Long chatId, String text, boolean cancel) {
+        String command = cancel ? "/cancel" : "/keep";
+        String[] tokens = text.split("\\s+");
+        if (tokens.length != 2) {
+            telegramApiClient.sendMessage(chatId, "Usage: " + command + " <id>. Run /list to see your ids.");
+            return;
+        }
+
+        long id;
+        try {
+            id = Long.parseLong(tokens[1]);
+            if (id <= 0) {
+                throw new NumberFormatException();
+            }
+        } catch (NumberFormatException exception) {
+            telegramApiClient.sendMessage(chatId, "I need a positive numeric id. Usage: " + command + " <id>.");
+            return;
+        }
+
+        User user = userService.findOrCreateByTelegramChatId(chatId);
+        try {
+            SubscriptionResponse subscription = cancel
+                    ? subscriptionService.cancelSubscription(user, id)
+                    : subscriptionService.keepSubscription(user, id);
+            String reply;
+            if (cancel) {
+                reply = "Marked %s as CANCELLED. I'll stop reminders. To stop actual charges, cancel with the provider too."
+                        .formatted(subscription.getName());
+            } else if (subscription.getStatus() == SubscriptionStatus.CANCELLED) {
+                reply = "%s is already cancelled in your tracker. /keep does not reactivate it."
+                        .formatted(subscription.getName());
+            } else {
+                reply = "Got it. I'll keep tracking %s. Next renewal: %s."
+                        .formatted(subscription.getName(), subscription.getNextRenewalDate());
+            }
+            telegramApiClient.sendMessage(chatId, reply);
+        } catch (ResourceNotFoundException exception) {
+            telegramApiClient.sendMessage(chatId,
+                    "You don't have a subscription with id " + id + ". Run /list to see yours.");
+        }
     }
 
     /**
@@ -225,7 +272,7 @@ public class TelegramCommandService {
                 sub.getAmount().toPlainString(),
                 sub.getBillingCycle().name().toLowerCase(),
                 sub.getNextRenewalDate())
-                + (sub.getStatus() == com.subtracker.bot.model.SubscriptionStatus.TRIAL ? " (trial)" : "");
+                + (sub.getStatus() == SubscriptionStatus.TRIAL ? " (trial)" : "");
     }
 
     private void handleUnknownCommand(Long chatId) {

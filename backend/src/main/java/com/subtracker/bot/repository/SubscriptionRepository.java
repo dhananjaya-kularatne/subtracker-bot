@@ -29,6 +29,7 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
 
     // One subscription by id, but only if it belongs to the given user —
     // used by the bot's /delete so a user can't touch someone else's row
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<Subscription> findByIdAndUser(Long id, User user);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

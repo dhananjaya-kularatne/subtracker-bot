@@ -5,6 +5,7 @@ import com.subtracker.bot.model.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import com.subtracker.bot.exception.ResourceNotFoundException;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -84,5 +85,52 @@ class TelegramCommandServiceTests {
         TelegramUpdate update = new TelegramUpdate();
         update.setMessage(message);
         return update;
+    }
+
+    @Test
+    void cancelUsesTheCallingUserAndConfirmsTrackingOnlyCancellation() {
+        when(subscriptions.cancelSubscription(user, 7L)).thenReturn(response(SubscriptionStatus.CANCELLED));
+        commands.handleUpdate(update("/cancel 7"));
+        verify(subscriptions).cancelSubscription(user, 7L);
+        verify(telegram).sendMessage(eq(123L), contains("cancel with the provider too"));
+    }
+
+    @Test
+    void keepAcknowledgesWithoutCallingCancel() {
+        when(subscriptions.keepSubscription(user, 7L)).thenReturn(response(SubscriptionStatus.ACTIVE));
+        commands.handleUpdate(update("/keep 7"));
+        verify(subscriptions).keepSubscription(user, 7L);
+        verify(subscriptions, never()).cancelSubscription(any(), anyLong());
+        verify(telegram).sendMessage(eq(123L), contains("keep tracking"));
+    }
+
+    @Test
+    void keepOnCancelledSubscriptionDoesNotPromiseReactivation() {
+        when(subscriptions.keepSubscription(user, 7L)).thenReturn(response(SubscriptionStatus.CANCELLED));
+        commands.handleUpdate(update("/keep 7"));
+        verify(telegram).sendMessage(eq(123L), contains("does not reactivate"));
+    }
+
+    @Test
+    void unownedDecisionReturnsNotFoundReply() {
+        when(subscriptions.cancelSubscription(user, 7L)).thenThrow(new ResourceNotFoundException("Not found"));
+        commands.handleUpdate(update("/cancel 7"));
+        verify(telegram).sendMessage(eq(123L), contains("don't have a subscription with id 7"));
+    }
+
+    @Test
+    void malformedDecisionCommandsDoNotChangeSubscriptions() {
+        commands.handleUpdate(update("/cancel"));
+        commands.handleUpdate(update("/keep abc"));
+        commands.handleUpdate(update("/cancel -1"));
+        commands.handleUpdate(update("/keep 7 extra"));
+        verify(subscriptions, never()).cancelSubscription(any(), anyLong());
+        verify(subscriptions, never()).keepSubscription(any(), anyLong());
+        verify(telegram, times(4)).sendMessage(eq(123L), anyString());
+    }
+
+    private SubscriptionResponse response(SubscriptionStatus status) {
+        return SubscriptionResponse.builder().id(7L).name("Netflix").status(status)
+                .nextRenewalDate(LocalDate.of(2026, 11, 15)).build();
     }
 }

@@ -71,7 +71,7 @@ class ReminderServiceTests {
         service.sendDueReminders();
 
         verify(telegram).sendMessage(101L,
-                "Netflix renews in 3 days (2026-10-15). 100.00 LKR will be charged.");
+                "Netflix renews in 3 days (2026-10-15). 100.00 LKR will be charged.\nReply /cancel 1 or /keep 1.");
         ArgumentCaptor<ReminderLog> saved = ArgumentCaptor.forClass(ReminderLog.class);
         verify(logs).save(saved.capture());
         assertSame(subscription, saved.getValue().getSubscription());
@@ -90,7 +90,7 @@ class ReminderServiceTests {
         service.sendDueReminders();
 
         verify(telegram).sendMessage(101L,
-                "Your Spotify trial ends in 3 days (2026-10-15). You'll be charged 100.00 LKR unless you cancel.");
+                "Your Spotify trial ends in 3 days (2026-10-15). You'll be charged 100.00 LKR unless you cancel.\nReply /cancel 1 or /keep 1.");
         assertEquals(SubscriptionStatus.TRIAL, trial.getStatus());
         assertEquals(TODAY.plusDays(3), trial.getNextRenewalDate());
         verify(subscriptions, never()).save(any());
@@ -176,7 +176,7 @@ class ReminderServiceTests {
         service.sendDueReminders();
 
         verify(telegram).sendMessage(101L,
-                "Netflix renews tomorrow (2026-10-13). 100.00 USD will be charged.");
+                "Netflix renews tomorrow (2026-10-13). 100.00 USD will be charged.\nReply /cancel 1 or /keep 1.");
     }
 
     @Test
@@ -188,7 +188,7 @@ class ReminderServiceTests {
         service.sendDueReminders();
 
         verify(telegram).sendMessage(101L,
-                "Netflix renews today (2026-10-12). 100.00 LKR will be charged.");
+                "Netflix renews today (2026-10-12). 100.00 LKR will be charged.\nReply /cancel 1 or /keep 1.");
     }
 
     private void candidates(Subscription... entries) {

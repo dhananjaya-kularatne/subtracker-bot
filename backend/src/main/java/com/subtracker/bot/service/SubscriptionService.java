@@ -92,6 +92,23 @@ public class SubscriptionService {
         return mapToResponse(subscription);
     }
 
+    @Transactional
+    public SubscriptionResponse cancelSubscription(User user, Long id) {
+        Subscription subscription = subscriptionRepository.findByIdAndUser(id, user)
+                .orElseThrow(() -> new ResourceNotFoundException("Subscription not found with id: " + id));
+        subscription.setStatus(SubscriptionStatus.CANCELLED);
+        subscription.setPendingTrialConversionDate(null);
+        return mapToResponse(subscription);
+    }
+
+    // /keep acknowledges an owned subscription without advancing or reactivating it.
+    @Transactional
+    public SubscriptionResponse keepSubscription(User user, Long id) {
+        Subscription subscription = subscriptionRepository.findByIdAndUser(id, user)
+                .orElseThrow(() -> new ResourceNotFoundException("Subscription not found with id: " + id));
+        return mapToResponse(subscription);
+    }
+
     // Maps an entity to its client facing response shape
     private SubscriptionResponse mapToResponse(Subscription subscription) {
         return SubscriptionResponse.builder()

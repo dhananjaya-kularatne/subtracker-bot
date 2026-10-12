@@ -81,12 +81,13 @@ public class ReminderService {
         String currency = subscription.getCurrency() != null
                 ? subscription.getCurrency() : subscription.getUser().getDefaultCurrency();
         String charge = subscription.getAmount().toPlainString() + " " + currency;
+        String reply = "\nReply /cancel %d or /keep %d.".formatted(subscription.getId(), subscription.getId());
 
         if (subscription.getStatus() == SubscriptionStatus.TRIAL) {
             return "Your %s trial ends %s (%s). You'll be charged %s unless you cancel."
-                    .formatted(subscription.getName(), when, subscription.getNextRenewalDate(), charge);
+                    .formatted(subscription.getName(), when, subscription.getNextRenewalDate(), charge) + reply;
         }
         return "%s renews %s (%s). %s will be charged."
-                .formatted(subscription.getName(), when, subscription.getNextRenewalDate(), charge);
+                .formatted(subscription.getName(), when, subscription.getNextRenewalDate(), charge) + reply;
     }
 }

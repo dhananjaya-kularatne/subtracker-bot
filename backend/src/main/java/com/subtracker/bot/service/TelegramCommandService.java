@@ -15,9 +15,10 @@ import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 
 /**
- * Parses incoming Telegram messages into commands and routes them to the appropriate handler. This is the "brain" behind the bot's chat interface —
+ * Parses incoming Telegram messages into commands and routes them to the appropriate handler. This is the "brain" behind the bot's chat interface -
  * it never touches HTTP directly, and never touches Telegram's API directly except through TelegramApiClient.
  */
 @Service
@@ -30,8 +31,9 @@ public class TelegramCommandService {
     private final SubscriptionService subscriptionService;
 
     private static final String ADD_USAGE = """
-            Usage: /add <name> <amount> <monthly|yearly> <renewal date>
-            Example: /add Netflix 1500 monthly 2026-08-15""";
+            Usage: /add <name> <amount> <monthly|yearly> <renewal date> [trial]
+            Example: /add Netflix 1500 monthly 2026-11-15
+            Trial: /add Spotify 590 monthly 2026-10-15 trial""";
 
     private static final String DELETE_USAGE = """
             Usage: /delete <id>
@@ -63,7 +65,7 @@ public class TelegramCommandService {
     }
 
     /**
-     * Handles /list — shows every subscription belonging to the caller, each
+     * Handles /list - shows every subscription belonging to the caller, each
      * prefixed with its id so it can be passed straight to /delete.
      */
     private void handleList(Long chatId) {
@@ -82,7 +84,7 @@ public class TelegramCommandService {
     private String formatSubscriptionList(List<SubscriptionResponse> subscriptions) {
         StringBuilder sb = new StringBuilder("Your subscriptions:\n");
         for (SubscriptionResponse sub : subscriptions) {
-            sb.append("\n#%d  %s — %s %s / %s\n     renews %s · %s\n".formatted(
+            sb.append("\n#%d  %s - %s %s / %s\n     renews %s · %s\n".formatted(
                     sub.getId(),
                     sub.getName(),
                     sub.getCurrency(),
@@ -97,7 +99,7 @@ public class TelegramCommandService {
 
     /**
      * Handles /delete &lt;id&gt;. The id comes from an untrusted chat message, so the
-     * delete goes through the ownership-checked service path — an id that isn't the
+     * delete goes through the ownership-checked service path - an id that isn't the
      * caller's own is reported the same as one that doesn't exist.
      */
     private void handleDelete(Long chatId, String text) {
@@ -132,7 +134,8 @@ public class TelegramCommandService {
                 Hi! I'll help you track your subscriptions and remind you before you get charged.
 
                 /add - add a subscription
-                  e.g. /add Netflix 1500 monthly 2026-08-15
+                  e.g. /add Netflix 1500 monthly 2026-11-15
+                  add trial at the end to track a free trial
                 /list - see your subscriptions
                 /delete - remove a subscription
                 """;
@@ -140,23 +143,26 @@ public class TelegramCommandService {
     }
 
     /**
-     * Handles /add &lt;name&gt; &lt;amount&gt; &lt;monthly|yearly&gt; &lt;yyyy-MM-dd&gt;.
-     * The name may be several words: the last three tokens are always the amount,
+     * Handles /add with an optional trailing trial token.
+     * The name may be several words: after removing the trial token, the last three tokens are the amount,
      * billing cycle and renewal date, so everything between the command and those
      * three is joined back together as the name (no quoting needed for "Amazon Prime").
      */
     private void handleAdd(Long chatId, String text) {
         String[] tokens = text.split("\\s+");
 
+        boolean isTrial = tokens[tokens.length - 1].equalsIgnoreCase("trial");
+        int argumentEnd = tokens.length - (isTrial ? 1 : 0);
+
         // /add + at least a one-word name + amount + cycle + date = 5 tokens minimum
-        if (tokens.length < 5) {
+        if (argumentEnd < 5) {
             telegramApiClient.sendMessage(chatId, "That command looks incomplete.\n\n" + ADD_USAGE);
             return;
         }
 
-        int amountIndex = tokens.length - 3;
-        int cycleIndex = tokens.length - 2;
-        int dateIndex = tokens.length - 1;
+        int amountIndex = argumentEnd - 3;
+        int cycleIndex = argumentEnd - 2;
+        int dateIndex = argumentEnd - 1;
 
         String name = String.join(" ", Arrays.copyOfRange(tokens, 1, amountIndex));
 
@@ -166,6 +172,7 @@ public class TelegramCommandService {
                     .amount(parseAmount(tokens[amountIndex]))
                     .billingCycle(parseCycle(tokens[cycleIndex]))
                     .nextRenewalDate(parseDate(tokens[dateIndex]))
+                    .isTrial(isTrial)
                     .build();
 
             User user = userService.findOrCreateByTelegramChatId(chatId);
@@ -174,7 +181,7 @@ public class TelegramCommandService {
             telegramApiClient.sendMessage(chatId, formatAddConfirmation(saved));
 
         } catch (CommandFormatException ex) {
-            // Malformed argument — tell the user what was wrong and how to fix it,
+            // Malformed argument - tell the user what was wrong and how to fix it,
             // rather than letting the exception bubble up and drop the message silently.
             telegramApiClient.sendMessage(chatId, ex.getMessage() + "\n\n" + ADD_USAGE);
         }
@@ -195,7 +202,7 @@ public class TelegramCommandService {
 
     private BillingCycle parseCycle(String raw) {
         try {
-            return BillingCycle.valueOf(raw.toUpperCase());
+            return BillingCycle.valueOf(raw.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException ex) {
             throw new CommandFormatException(
                     "The billing cycle should be \"monthly\" or \"yearly\", not \"" + raw + "\".");
@@ -212,12 +219,13 @@ public class TelegramCommandService {
     }
 
     private String formatAddConfirmation(SubscriptionResponse sub) {
-        return "✅ Added %s — %s %s / %s, renews %s".formatted(
+        return "✅ Added %s - %s %s / %s, renews %s".formatted(
                 sub.getName(),
                 sub.getCurrency(),
                 sub.getAmount().toPlainString(),
                 sub.getBillingCycle().name().toLowerCase(),
-                sub.getNextRenewalDate());
+                sub.getNextRenewalDate())
+                + (sub.getStatus() == com.subtracker.bot.model.SubscriptionStatus.TRIAL ? " (trial)" : "");
     }
 
     private void handleUnknownCommand(Long chatId) {

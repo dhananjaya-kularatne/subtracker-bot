@@ -3,6 +3,7 @@ package com.subtracker.bot.service;
 import com.subtracker.bot.dto.CreateSubscriptionRequest;
 import com.subtracker.bot.dto.SubscriptionResponse;
 import com.subtracker.bot.dto.TelegramUpdate;
+import com.subtracker.bot.dto.SubscriptionSummaryResponse;
 import com.subtracker.bot.exception.ResourceNotFoundException;
 import com.subtracker.bot.model.BillingCycle;
 import com.subtracker.bot.model.User;
@@ -30,6 +31,7 @@ public class TelegramCommandService {
     private final TelegramApiClient telegramApiClient;
     private final UserService userService;
     private final SubscriptionService subscriptionService;
+    private final SubscriptionSummaryService subscriptionSummaryService;
 
     private static final String ADD_USAGE = """
             Usage: /add <name> <amount> <monthly|yearly> <renewal date> [trial]
@@ -60,6 +62,7 @@ public class TelegramCommandService {
             case "/start" -> handleStart(chatId);
             case "/add" -> handleAdd(chatId, text);
             case "/list" -> handleList(chatId);
+            case "/summary" -> handleSummary(chatId);
             case "/delete" -> handleDelete(chatId, text);
             case "/cancel" -> handleDecision(chatId, text, true);
             case "/keep" -> handleDecision(chatId, text, false);
@@ -98,6 +101,41 @@ public class TelegramCommandService {
         }
         sb.append("\nRemove one with /delete <id>, e.g. /delete ").append(subscriptions.get(0).getId());
         return sb.toString();
+    }
+
+    private void handleSummary(Long chatId) {
+        User user = userService.findOrCreateByTelegramChatId(chatId);
+        SubscriptionSummaryResponse summary = subscriptionSummaryService.getSummary(user);
+        if (summary.activeSubscriptions().isEmpty() && summary.trialSubscriptions().isEmpty()) {
+            telegramApiClient.sendMessage(chatId, "You have no active subscriptions or trials. Add one with /add.");
+            return;
+        }
+
+        StringBuilder message = new StringBuilder("Your subscription summary:\n");
+        if (summary.activeSubscriptions().isEmpty()) {
+            message.append("\nNo active subscriptions.\n");
+        } else {
+            message.append("\nActive subscriptions (monthly equivalents):\n");
+            for (SubscriptionSummaryResponse.Entry entry : summary.activeSubscriptions()) {
+                message.append("#%d %s - %s %s / month (%s %s / %s)\n".formatted(
+                        entry.id(), entry.name(), entry.currency(), entry.monthlyEquivalent().toPlainString(),
+                        entry.currency(), entry.amount().toPlainString(),
+                        entry.billingCycle().name().toLowerCase(Locale.ROOT)));
+            }
+            message.append("\nMonthly totals (active only):\n");
+            summary.monthlyTotals().forEach((currency, total) ->
+                    message.append("%s %s / month\n".formatted(currency, total.toPlainString())));
+        }
+
+        if (!summary.trialSubscriptions().isEmpty()) {
+            message.append("\nTrials (not included in totals):\n");
+            for (SubscriptionSummaryResponse.Entry entry : summary.trialSubscriptions()) {
+                message.append("#%d %s - %s %s / %s after trial; trial ends %s\n".formatted(
+                        entry.id(), entry.name(), entry.currency(), entry.amount().toPlainString(),
+                        entry.billingCycle().name().toLowerCase(Locale.ROOT), entry.nextRenewalDate()));
+            }
+        }
+        telegramApiClient.sendMessage(chatId, message.toString().stripTrailing());
     }
 
     /**
@@ -140,6 +178,7 @@ public class TelegramCommandService {
                   e.g. /add Netflix 1500 monthly 2026-11-15
                   add trial at the end to track a free trial
                 /list - see your subscriptions
+                /summary - see monthly spending totals per currency
                 /delete - remove a subscription
                 /cancel <id> - mark a subscription cancelled and stop reminders
                 /keep <id> - acknowledge a reminder and keep tracking

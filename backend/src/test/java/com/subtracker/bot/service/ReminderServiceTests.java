@@ -26,6 +26,7 @@ class ReminderServiceTests {
     private UserRepository users;
     private ReminderLogRepository logs;
     private TelegramApiClient telegram;
+    private BrevoEmailClient email;
     private ReminderService service;
 
     @BeforeEach
@@ -34,10 +35,12 @@ class ReminderServiceTests {
         users = mock(UserRepository.class);
         logs = mock(ReminderLogRepository.class);
         telegram = mock(TelegramApiClient.class);
+        email = mock(BrevoEmailClient.class);
         // It is still October 11 in UTC, but October 12 in Colombo.
         Clock clock = Clock.fixed(Instant.parse("2026-10-11T18:45:00Z"),
                 ZoneId.of("Asia/Colombo"));
-        service = new ReminderService(subscriptions, users, logs, telegram, clock);
+        service = new ReminderService(subscriptions, users, logs,
+                new NotificationDeliveryService(telegram, email), clock);
         when(users.findMaxReminderDaysBefore()).thenReturn(7);
     }
 
@@ -195,6 +198,44 @@ class ReminderServiceTests {
         when(subscriptions.findByStatusInAndNextRenewalDateBetween(
                 List.of(SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL), TODAY, TODAY.plusDays(7)))
                 .thenReturn(List.of(entries));
+    }
+
+    @Test
+    void successfulFallbackIsLoggedAsEmailAndPreventsDuplicateOnNextRun() {
+        Subscription subscription = subscription(1L, SubscriptionStatus.ACTIVE, TODAY.plusDays(3), 3);
+        subscription.getUser().setEmail("user@example.com");
+        candidates(subscription);
+        when(email.sendEmail(eq("user@example.com"), anyString(), anyString())).thenReturn(true);
+        AtomicBoolean delivered = new AtomicBoolean();
+        when(logs.existsBySubscriptionAndTypeAndRenewalDate(subscription, ReminderType.RENEWAL_REMINDER, TODAY.plusDays(3)))
+                .thenAnswer(invocation -> delivered.get());
+        when(logs.save(any(ReminderLog.class))).thenAnswer(invocation -> {
+            delivered.set(true);
+            return invocation.getArgument(0);
+        });
+
+        service.sendDueReminders();
+        service.sendDueReminders();
+
+        verify(logs).save(argThat(entry -> entry.getChannel() == ReminderChannel.EMAIL
+                && entry.getRenewalDate().equals(TODAY.plusDays(3))));
+        verify(telegram, times(1)).sendMessage(eq(101L), anyString());
+        verify(email, times(1)).sendEmail(eq("user@example.com"), anyString(), contains("In Telegram, send /cancel 1"));
+    }
+
+    @Test
+    void bothChannelsFailWithoutLoggingAndFallbackRetriesNextRun() {
+        Subscription subscription = subscription(1L, SubscriptionStatus.TRIAL, TODAY.plusDays(3), 3);
+        subscription.getUser().setEmail("user@example.com");
+        candidates(subscription);
+        when(email.sendEmail(anyString(), anyString(), anyString())).thenReturn(false, true);
+
+        service.sendDueReminders();
+        verify(logs, never()).save(any());
+        service.sendDueReminders();
+
+        verify(email, times(2)).sendEmail(anyString(), anyString(), anyString());
+        verify(logs).save(argThat(entry -> entry.getChannel() == ReminderChannel.EMAIL));
     }
 
     private Subscription subscription(long id, SubscriptionStatus status, LocalDate renewalDate, int window) {

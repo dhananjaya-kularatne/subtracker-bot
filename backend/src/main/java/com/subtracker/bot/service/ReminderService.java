@@ -1,6 +1,5 @@
 package com.subtracker.bot.service;
 
-import com.subtracker.bot.model.ReminderChannel;
 import com.subtracker.bot.model.ReminderLog;
 import com.subtracker.bot.model.ReminderType;
 import com.subtracker.bot.model.Subscription;
@@ -25,7 +24,7 @@ public class ReminderService {
     private final SubscriptionRepository subscriptionRepository;
     private final UserRepository userRepository;
     private final ReminderLogRepository reminderLogRepository;
-    private final TelegramApiClient telegramApiClient;
+    private final NotificationDeliveryService notificationDeliveryService;
     private final Clock reminderClock;
 
     // Serializes runs within this application instance. Use one instance until
@@ -60,8 +59,9 @@ public class ReminderService {
             return;
         }
 
-        if (!telegramApiClient.sendMessage(subscription.getUser().getTelegramChatId(),
-                formatReminder(subscription, today))) {
+        var channel = notificationDeliveryService.send(subscription.getUser(),
+                "Subscription reminder: " + subscription.getName(), formatReminder(subscription, today));
+        if (channel.isEmpty()) {
             return;
         }
 
@@ -70,7 +70,7 @@ public class ReminderService {
         reminderLogRepository.save(ReminderLog.builder()
                 .subscription(subscription)
                 .type(ReminderType.RENEWAL_REMINDER)
-                .channel(ReminderChannel.TELEGRAM)
+                .channel(channel.get())
                 .renewalDate(renewalDate)
                 .build());
     }

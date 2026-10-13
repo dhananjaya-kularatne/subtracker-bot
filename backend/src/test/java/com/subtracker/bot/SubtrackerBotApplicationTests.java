@@ -5,6 +5,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import com.subtracker.bot.service.TelegramPollingService;
 import com.subtracker.bot.service.TelegramApiClient;
+import com.subtracker.bot.service.BrevoEmailClient;
+import com.subtracker.bot.service.UserService;
 import com.subtracker.bot.service.SubscriptionRenewalService;
 import com.subtracker.bot.service.SubscriptionService;
 import com.subtracker.bot.repository.SubscriptionRepository;
@@ -30,6 +32,12 @@ class SubtrackerBotApplicationTests {
 
     @MockitoBean
     private TelegramApiClient telegramApiClient;
+
+    @MockitoBean
+    private BrevoEmailClient brevoEmailClient;
+
+    @Autowired
+    private UserService userService;
 
     @Autowired
     private SubscriptionRenewalService renewals;
@@ -89,6 +97,24 @@ class SubtrackerBotApplicationTests {
             if (trial != null) {
                 subscriptionService.deleteSubscription(user, trial.getId());
             }
+            users.delete(user);
+        }
+    }
+    @Test
+    void settingsPersistAcrossTransactions() {
+        long chatId = -ThreadLocalRandom.current().nextLong(1, Long.MAX_VALUE);
+        User user = userService.findOrCreateByTelegramChatId(chatId);
+        try {
+            userService.updateReminderDaysBefore(chatId, 7);
+            userService.updateDefaultCurrency(chatId, "usd");
+            userService.updateEmail(chatId, "user@example.com");
+            User stored = users.findByTelegramChatId(chatId).orElseThrow();
+            assertEquals(7, stored.getReminderDaysBefore());
+            assertEquals("USD", stored.getDefaultCurrency());
+            assertEquals("user@example.com", stored.getEmail());
+            userService.updateEmail(chatId, "off");
+            assertNull(users.findByTelegramChatId(chatId).orElseThrow().getEmail());
+        } finally {
             users.delete(user);
         }
     }

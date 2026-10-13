@@ -22,6 +22,7 @@ class SubscriptionRenewalServiceTests {
     private SubscriptionRepository subscriptions;
     private ReminderLogRepository logs;
     private TelegramApiClient telegram;
+    private BrevoEmailClient email;
     private SubscriptionRenewalService service;
 
     @BeforeEach
@@ -29,7 +30,8 @@ class SubscriptionRenewalServiceTests {
         subscriptions = mock(SubscriptionRepository.class);
         logs = mock(ReminderLogRepository.class);
         telegram = mock(TelegramApiClient.class);
-        service = new SubscriptionRenewalService(subscriptions, logs, telegram,
+        email = mock(BrevoEmailClient.class);
+        service = new SubscriptionRenewalService(subscriptions, logs, new NotificationDeliveryService(telegram, email),
                 Clock.fixed(Instant.parse("2026-10-11T18:45:00Z"), ZoneId.of("Asia/Colombo")));
     }
 
@@ -150,5 +152,22 @@ class SubscriptionRenewalServiceTests {
                 .user(User.builder().id(1L).telegramChatId(123L).defaultCurrency("LKR").build())
                 .amount(new BigDecimal("100.00")).billingCycle(BillingCycle.MONTHLY)
                 .nextRenewalDate(date).build();
+    }
+
+    @Test
+    void emailConversionFallbackIsLoggedAndClearsPendingNotice() {
+        Subscription subscription = subscription(SubscriptionStatus.TRIAL, TODAY);
+        subscription.getUser().setEmail("user@example.com");
+        when(subscriptions.findByIdForUpdate(1L)).thenReturn(Optional.of(subscription));
+        when(email.sendEmail(eq("user@example.com"), anyString(), anyString())).thenReturn(true);
+
+        service.processSubscription(1L);
+        service.processSubscription(1L);
+
+        assertEquals(SubscriptionStatus.ACTIVE, subscription.getStatus());
+        assertNull(subscription.getPendingTrialConversionDate());
+        verify(logs).save(argThat(entry -> entry.getChannel() == ReminderChannel.EMAIL
+                && entry.getType() == ReminderType.TRIAL_CONVERSION && entry.getRenewalDate().equals(TODAY)));
+        verify(email, times(1)).sendEmail(eq("user@example.com"), anyString(), anyString());
     }
 }

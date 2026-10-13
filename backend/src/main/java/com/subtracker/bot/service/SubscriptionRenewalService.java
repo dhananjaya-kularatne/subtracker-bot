@@ -17,7 +17,7 @@ public class SubscriptionRenewalService {
 
     private final SubscriptionRepository subscriptionRepository;
     private final ReminderLogRepository reminderLogRepository;
-    private final TelegramApiClient telegramApiClient;
+    private final NotificationDeliveryService notificationDeliveryService;
     private final Clock reminderClock;
 
     // Called through a separate service so every subscription gets its own transaction.
@@ -71,10 +71,12 @@ public class SubscriptionRenewalService {
                         currency, subscription.getBillingCycle().name().toLowerCase(Locale.ROOT),
                         subscription.getNextRenewalDate());
 
-        if (telegramApiClient.sendMessage(subscription.getUser().getTelegramChatId(), message)) {
+        var channel = notificationDeliveryService.send(subscription.getUser(),
+                "Trial conversion: " + subscription.getName(), message);
+        if (channel.isPresent()) {
             reminderLogRepository.save(ReminderLog.builder()
                     .subscription(subscription).type(ReminderType.TRIAL_CONVERSION)
-                    .channel(ReminderChannel.TELEGRAM).renewalDate(conversionDate).build());
+                    .channel(channel.get()).renewalDate(conversionDate).build());
             subscription.setPendingTrialConversionDate(null);
         }
         // Managed entity changes commit even if Telegram fails. The pending date

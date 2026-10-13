@@ -39,6 +39,9 @@ public class User {
     @Column(name = "default_currency", nullable = false, length = 10)
     private String defaultCurrency;
 
+    @Column(name = "email", length = 254)
+    private String email;
+
     // Auto-set on INSERT only — Hibernate stamps this, never touched afterward
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

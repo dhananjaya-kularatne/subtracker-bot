@@ -4,6 +4,7 @@ import com.subtracker.bot.dto.CreateSubscriptionRequest;
 import com.subtracker.bot.dto.SubscriptionResponse;
 import com.subtracker.bot.dto.TelegramUpdate;
 import com.subtracker.bot.dto.SubscriptionSummaryResponse;
+import com.subtracker.bot.dto.UserResponse;
 import com.subtracker.bot.exception.ResourceNotFoundException;
 import com.subtracker.bot.model.BillingCycle;
 import com.subtracker.bot.model.User;
@@ -63,6 +64,7 @@ public class TelegramCommandService {
             case "/add" -> handleAdd(chatId, text);
             case "/list" -> handleList(chatId);
             case "/summary" -> handleSummary(chatId);
+            case "/settings" -> handleSettings(chatId, text);
             case "/delete" -> handleDelete(chatId, text);
             case "/cancel" -> handleDecision(chatId, text, true);
             case "/keep" -> handleDecision(chatId, text, false);
@@ -179,6 +181,7 @@ public class TelegramCommandService {
                   add trial at the end to track a free trial
                 /list - see your subscriptions
                 /summary - see monthly spending totals per currency
+                /settings - view or change reminder days, currency, and fallback email
                 /delete - remove a subscription
                 /cancel <id> - mark a subscription cancelled and stop reminders
                 /keep <id> - acknowledge a reminder and keep tracking
@@ -225,6 +228,56 @@ public class TelegramCommandService {
         } catch (ResourceNotFoundException exception) {
             telegramApiClient.sendMessage(chatId,
                     "You don't have a subscription with id " + id + ". Run /list to see yours.");
+        }
+    }
+
+    private void handleSettings(Long chatId, String text) {
+        String[] tokens = text.split("\\s+");
+        if (tokens.length == 1) {
+            UserResponse settings = userService.getSettings(chatId);
+            telegramApiClient.sendMessage(chatId, """
+                    Your settings:
+                    Reminder: %d days before renewal
+                    Default currency: %s
+                    Fallback email: %s
+
+                    /settings reminder <1-30>
+                    /settings currency <code>, e.g. USD
+                    /settings email <address>, or off to remove it
+                    """.formatted(settings.getReminderDaysBefore(), settings.getDefaultCurrency(),
+                    settings.getEmail() == null ? "not set" : settings.getEmail()).stripTrailing());
+            return;
+        }
+        if (tokens.length != 3) {
+            telegramApiClient.sendMessage(chatId, "Usage: /settings reminder <1-30>, currency <code>, or email <address|off>.");
+            return;
+        }
+        try {
+            switch (tokens[1].toLowerCase(Locale.ROOT)) {
+                case "reminder" -> {
+                    int days;
+                    try {
+                        days = Integer.parseInt(tokens[2]);
+                    } catch (NumberFormatException exception) {
+                        throw new IllegalArgumentException("Reminder days must be a whole number between 1 and 30.");
+                    }
+                    UserResponse settings = userService.updateReminderDaysBefore(chatId, days);
+                    telegramApiClient.sendMessage(chatId, "Reminders set to " + settings.getReminderDaysBefore() + " days before renewal.");
+                }
+                case "currency" -> {
+                    UserResponse settings = userService.updateDefaultCurrency(chatId, tokens[2]);
+                    telegramApiClient.sendMessage(chatId, "Default currency set to " + settings.getDefaultCurrency()
+                            + " for new subscriptions. Existing subscriptions keep their currency.");
+                }
+                case "email" -> {
+                    UserResponse settings = userService.updateEmail(chatId, tokens[2]);
+                    telegramApiClient.sendMessage(chatId, settings.getEmail() == null ? "Fallback email removed."
+                            : "Fallback email saved. Email is used when Telegram fails and email delivery is configured.");
+                }
+                default -> telegramApiClient.sendMessage(chatId, "Unknown setting. Use /settings to see the options.");
+            }
+        } catch (IllegalArgumentException exception) {
+            telegramApiClient.sendMessage(chatId, exception.getMessage());
         }
     }
 

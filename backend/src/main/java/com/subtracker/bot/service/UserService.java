@@ -7,6 +7,8 @@ import com.subtracker.bot.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.util.Currency;
+import java.util.Locale;
 
 /**
  * Business logic for User lookup and auto-registration.
@@ -40,6 +42,46 @@ public class UserService {
         return mapToResponse(user);
     }
 
+    @Transactional
+    public UserResponse getSettings(Long chatId) {
+        return mapToResponse(findOrCreateByTelegramChatId(chatId));
+    }
+
+    @Transactional
+    public UserResponse updateReminderDaysBefore(Long chatId, int days) {
+        if (days < 1 || days > 30) {
+            throw new IllegalArgumentException("Reminder days must be between 1 and 30.");
+        }
+        User user = findOrCreateByTelegramChatId(chatId);
+        user.setReminderDaysBefore(days);
+        return mapToResponse(user);
+    }
+
+    @Transactional
+    public UserResponse updateDefaultCurrency(Long chatId, String raw) {
+        String currency = raw.trim().toUpperCase(Locale.ROOT);
+        try {
+            Currency.getInstance(currency);
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("Use a valid three-letter currency code, such as LKR or USD.");
+        }
+        User user = findOrCreateByTelegramChatId(chatId);
+        user.setDefaultCurrency(currency);
+        return mapToResponse(user);
+    }
+
+    @Transactional
+    public UserResponse updateEmail(Long chatId, String raw) {
+        String email = raw.trim();
+        boolean remove = email.equalsIgnoreCase("off");
+        if (!remove && (email.length() > 254 || !email.matches("[^\\s@]+@[^\\s@]+\\.[^\\s@]+"))) {
+            throw new IllegalArgumentException("Use a valid email address, or off to remove it.");
+        }
+        User user = findOrCreateByTelegramChatId(chatId);
+        user.setEmail(remove ? null : email);
+        return mapToResponse(user);
+    }
+
     // Creates a brand-new user with default settings
     private User createUser(Long telegramChatId) {
         User user = User.builder()
@@ -57,6 +99,7 @@ public class UserService {
                 .telegramChatId(user.getTelegramChatId())
                 .reminderDaysBefore(user.getReminderDaysBefore())
                 .defaultCurrency(user.getDefaultCurrency())
+                .email(user.getEmail())
                 .createdAt(user.getCreatedAt())
                 .build();
     }

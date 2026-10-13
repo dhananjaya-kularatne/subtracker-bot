@@ -20,5 +20,6 @@ public class UserResponse {
     private Long telegramChatId;
     private Integer reminderDaysBefore;
     private String defaultCurrency;
+    private String email;
     private LocalDateTime createdAt;
 }

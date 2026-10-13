@@ -187,4 +187,42 @@ class TelegramCommandServiceTests {
         commands.handleUpdate(update("/start"));
         verify(telegram).sendMessage(eq(123L), contains("/summary - see monthly spending totals per currency"));
     }
+
+    @Test
+    void settingsShowsCurrentValuesAndUsage() {
+        when(users.getSettings(123L)).thenReturn(UserResponse.builder().reminderDaysBefore(3)
+                .defaultCurrency("LKR").build());
+        commands.handleUpdate(update("/settings"));
+        verify(telegram).sendMessage(eq(123L), contains("Fallback email: not set"));
+    }
+
+    @Test
+    void settingsUpdatesReminderWindowForCallingChat() {
+        when(users.updateReminderDaysBefore(123L, 7)).thenReturn(UserResponse.builder().reminderDaysBefore(7).build());
+        commands.handleUpdate(update("/settings reminder 7"));
+        verify(users).updateReminderDaysBefore(123L, 7);
+        verify(telegram).sendMessage(123L, "Reminders set to 7 days before renewal.");
+    }
+
+    @Test
+    void settingsRejectsNonNumericAndInvalidWindows() {
+        when(users.updateReminderDaysBefore(123L, 31)).thenThrow(new IllegalArgumentException("Reminder days must be between 1 and 30."));
+        commands.handleUpdate(update("/settings reminder abc"));
+        commands.handleUpdate(update("/settings reminder 31"));
+        verify(telegram).sendMessage(eq(123L), contains("whole number"));
+        verify(telegram).sendMessage(123L, "Reminder days must be between 1 and 30.");
+    }
+
+    @Test
+    void settingsUpdatesCurrencyAndEmailAndCanRemoveEmail() {
+        when(users.updateDefaultCurrency(123L, "usd")).thenReturn(UserResponse.builder().defaultCurrency("USD").build());
+        when(users.updateEmail(123L, "user@example.com")).thenReturn(UserResponse.builder().email("user@example.com").build());
+        when(users.updateEmail(123L, "off")).thenReturn(UserResponse.builder().build());
+        commands.handleUpdate(update("/settings currency usd"));
+        commands.handleUpdate(update("/settings email user@example.com"));
+        commands.handleUpdate(update("/settings email off"));
+        verify(telegram).sendMessage(eq(123L), contains("for new subscriptions"));
+        verify(telegram).sendMessage(eq(123L), contains("Fallback email saved"));
+        verify(telegram).sendMessage(123L, "Fallback email removed.");
+    }
 }

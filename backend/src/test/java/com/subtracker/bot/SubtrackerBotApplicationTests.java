@@ -1,6 +1,8 @@
 package com.subtracker.bot;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import com.subtracker.bot.service.TelegramPollingService;
@@ -14,6 +16,9 @@ import com.subtracker.bot.repository.ReminderLogRepository;
 import com.subtracker.bot.repository.UserRepository;
 import com.subtracker.bot.model.*;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.context.WebApplicationContext;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.http.MediaType;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -22,8 +27,10 @@ import java.util.concurrent.ThreadLocalRandom;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE, properties = "reminder.cron=-")
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK, properties = "reminder.cron=-")
 class SubtrackerBotApplicationTests {
 
     // Context verification must not start a second Telegram polling connection.
@@ -56,6 +63,9 @@ class SubtrackerBotApplicationTests {
 
     @Autowired
     private Clock reminderClock;
+
+    @Autowired
+    private WebApplicationContext webContext;
 
 	@Test
 	void contextLoads() {
@@ -115,6 +125,34 @@ class SubtrackerBotApplicationTests {
             userService.updateEmail(chatId, "off");
             assertNull(users.findByTelegramChatId(chatId).orElseThrow().getEmail());
         } finally {
+            users.delete(user);
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource({"trial,true,TRIAL", "isTrial,true,TRIAL", "trial,false,ACTIVE", "omitted,false,ACTIVE"})
+    void restCreationAcceptsDocumentedJsonDateAndTrialFlag(String field, boolean trial, SubscriptionStatus expectedStatus) throws Exception {
+        long chatId = -ThreadLocalRandom.current().nextLong(1, Long.MAX_VALUE);
+        User user = userService.findOrCreateByTelegramChatId(chatId);
+        try {
+            var result = MockMvcBuilders.webAppContextSetup(webContext).build()
+                    .perform(post("/api/v1/subscriptions").param("telegramChatId", Long.toString(chatId))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"name":"REST Example","amount":100,"billingCycle":"MONTHLY",
+                                     "nextRenewalDate":"2030-12-15"%s}
+                                    """.formatted(field.equals("omitted") ? "" : ",\"" + field + "\":" + trial)))
+                    .andReturn();
+            if (result.getResolvedException() != null) {
+                throw new AssertionError("Documented REST request failed", result.getResolvedException());
+            }
+            assertEquals(201, result.getResponse().getStatus());
+            assertEquals(expectedStatus, subscriptions.findByUser(user).get(0).getStatus());
+            assertEquals(LocalDate.of(2030, 12, 15), subscriptions.findByUser(user).get(0).getNextRenewalDate());
+        } finally {
+            for (Subscription subscription : subscriptions.findByUser(user)) {
+                subscriptionService.deleteSubscription(user, subscription.getId());
+            }
             users.delete(user);
         }
     }

@@ -1,6 +1,9 @@
 package com.subtracker.bot.dto;
 
 import com.subtracker.bot.model.BillingCycle;
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -16,7 +19,7 @@ import java.time.LocalDate;
  * Status always  starts as either TRIAL or ACTIVE, set by the service layer based on the isTrial flag, never sent directly by the client as an enum.
  */
 @Data
-@NoArgsConstructor
+@NoArgsConstructor(onConstructor_ = @JsonCreator)
 @AllArgsConstructor
 @Builder
 public class CreateSubscriptionRequest {
@@ -38,5 +41,7 @@ public class CreateSubscriptionRequest {
     private LocalDate nextRenewalDate;
 
     // true -> subscription starts as TRIAL, false -> starts as ACTIVE
+    @JsonProperty("trial")
+    @JsonAlias("isTrial")
     private boolean isTrial;
 }

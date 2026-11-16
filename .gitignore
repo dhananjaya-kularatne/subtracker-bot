@@ -1,0 +1,16 @@
+# Local secrets and configuration
+.env
+.env.*
+!.env.example
+**/application-local.properties
+**/application-local.yml
+**/application-local.yaml
+**/application-*.local.properties
+/.aws/
+
+# Local output and editor files
+*.log
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

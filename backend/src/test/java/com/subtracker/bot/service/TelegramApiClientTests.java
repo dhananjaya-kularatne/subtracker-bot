@@ -10,6 +10,10 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
 import java.io.IOException;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import org.slf4j.LoggerFactory;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -58,5 +62,27 @@ class TelegramApiClientTests {
 
         assertFalse(client.sendMessage(123L, "Hello"));
         server.verify();
+    }
+
+    @Test
+    void failureLogsDoNotExposeExceptionUrlsOrCredentials() {
+        Logger logger = (Logger) LoggerFactory.getLogger(TelegramApiClient.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            server.expect(requestTo("https://api.telegram.org/bottest/sendMessage"))
+                    .andRespond(withException(new IOException("https://api.telegram.org/botprivate-test-token/sendMessage")));
+            assertFalse(client.sendMessage(123L, "Hello"));
+            String output = appender.list.stream().map(ILoggingEvent::getFormattedMessage)
+                    .collect(java.util.stream.Collectors.joining("\n"));
+            assertTrue(output.contains("ResourceAccessException"));
+            assertFalse(output.contains("api.telegram.org"));
+            assertFalse(output.contains("private-test-token"));
+            server.verify();
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
     }
 }

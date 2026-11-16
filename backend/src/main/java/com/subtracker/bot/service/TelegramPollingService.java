@@ -47,7 +47,7 @@ public class TelegramPollingService {
             try {
                 fetchAndProcessUpdates();
             } catch (Exception exception) {
-                log.error("Error during Telegram polling: {}", exception.getMessage());
+                log.error("Error during Telegram polling: {}", exception.getClass().getSimpleName());
                 // Avoid a tight error loop hammering Telegram's API on repeated failures
                 sleep(5000);
             }
@@ -83,7 +83,7 @@ public class TelegramPollingService {
         try {
             return objectMapper.readTree(response);
         } catch (Exception exception) {
-            log.error("Failed to parse Telegram getUpdates response: {}", exception.getMessage());
+            log.error("Failed to parse Telegram getUpdates response: {}", exception.getClass().getSimpleName());
             return null;
         }
     }

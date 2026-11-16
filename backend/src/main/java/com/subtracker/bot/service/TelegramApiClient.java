@@ -37,7 +37,7 @@ public class TelegramApiClient {
         } catch (Exception exception) {
             // A failed send (e.g. user blocked the bot) should never crash the caller — log it and move on. Retry/fallback logic can be
             // layered on top of this later if needed.
-            log.error("Failed to send Telegram message to chatId {}: {}", chatId, exception.getMessage());
+            log.error("Failed to send Telegram message to chatId {}: {}", chatId, exception.getClass().getSimpleName());
             return false;
         }
     }

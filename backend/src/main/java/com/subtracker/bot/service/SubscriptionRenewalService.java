@@ -9,7 +9,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.LocalDate;
-import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -66,10 +65,11 @@ public class SubscriptionRenewalService {
 
         String currency = subscription.getCurrency() != null
                 ? subscription.getCurrency() : subscription.getUser().getDefaultCurrency();
-        String message = "Your %s trial ended on %s and is now ACTIVE. The paid price is %s %s / %s. Next renewal: %s."
-                .formatted(subscription.getName(), conversionDate, subscription.getAmount().toPlainString(),
-                        currency, subscription.getBillingCycle().name().toLowerCase(Locale.ROOT),
-                        subscription.getNextRenewalDate());
+        String message = "✅ Your trial has ended\n\n%s · #%d\nStatus: Active\nTrial ended: %s\nPrice: %s / %s\nNext renewal: %s\n\nWe'll keep tracking it and remind you before the next renewal.\n/list - manage your subscriptions"
+                .formatted(subscription.getName(), subscription.getId(), MessageFormatting.date(conversionDate),
+                        MessageFormatting.money(currency, subscription.getAmount()),
+                        MessageFormatting.period(subscription.getBillingCycle()),
+                        MessageFormatting.date(subscription.getNextRenewalDate()));
 
         var channel = notificationDeliveryService.send(subscription.getUser(),
                 "Trial conversion: " + subscription.getName(), message);

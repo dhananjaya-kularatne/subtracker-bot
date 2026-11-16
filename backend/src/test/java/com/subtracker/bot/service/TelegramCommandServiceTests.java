@@ -9,6 +9,9 @@ import com.subtracker.bot.exception.ResourceNotFoundException;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 
@@ -30,7 +33,8 @@ class TelegramCommandServiceTests {
         users = mock(UserService.class);
         subscriptions = mock(SubscriptionService.class);
         summaries = mock(SubscriptionSummaryService.class);
-        commands = new TelegramCommandService(telegram, users, subscriptions, summaries);
+        commands = new TelegramCommandService(telegram, users, subscriptions, summaries,
+                Clock.fixed(Instant.parse("2026-11-16T00:00:00Z"), ZoneId.of("Asia/Colombo")));
         user = User.builder().id(1L).telegramChatId(123L).build();
         when(users.findOrCreateByTelegramChatId(123L)).thenReturn(user);
         when(subscriptions.createSubscription(eq(user), any())).thenAnswer(invocation -> {
@@ -52,7 +56,7 @@ class TelegramCommandServiceTests {
         assertEquals("Amazon Prime", request.getValue().getName());
         assertEquals(new BigDecimal("100"), request.getValue().getAmount());
         assertEquals(LocalDate.of(2026, 10, 15), request.getValue().getNextRenewalDate());
-        verify(telegram).sendMessage(eq(123L), contains("(trial)"));
+        verify(telegram).sendMessage(eq(123L), contains("Status: Free trial"));
     }
 
     @Test
@@ -154,19 +158,22 @@ class TelegramCommandServiceTests {
         verify(summaries).getSummary(user);
         ArgumentCaptor<String> reply = ArgumentCaptor.forClass(String.class);
         verify(telegram).sendMessage(eq(123L), reply.capture());
-        assertTrue(reply.getValue().contains("#7 Annual Plan - LKR 1000.00 / month (LKR 12000.00 / yearly)"));
+        assertTrue(reply.getValue().contains("Annual Plan · #7"));
+        assertTrue(reply.getValue().contains("Billed LKR 12,000.00 / year"));
         assertTrue(reply.getValue().contains("Monthly totals (active only):"));
-        assertTrue(reply.getValue().contains("LKR 1000.00 / month"));
+        assertTrue(reply.getValue().contains("LKR 1,000.00 / month"));
         assertTrue(reply.getValue().contains("USD 10.00 / month"));
-        assertTrue(reply.getValue().contains("Trials (not included in totals):"));
-        assertTrue(reply.getValue().contains("#9 Trial Plan - LKR 500.00 / monthly after trial; trial ends 2026-10-16"));
+        assertTrue(reply.getValue().contains("Free trials (not included in totals)"));
+        assertTrue(reply.getValue().contains("Trial Plan · #9"));
+        assertTrue(reply.getValue().contains("After trial: LKR 500.00 / month"));
+        assertTrue(reply.getValue().contains("Trial ends: 16 Oct 2026"));
     }
 
     @Test
     void emptySummarySuggestsAddingSubscription() {
         when(summaries.getSummary(user)).thenReturn(new SubscriptionSummaryResponse(List.of(), List.of(), Map.of()));
         commands.handleUpdate(update("/summary"));
-        verify(telegram).sendMessage(123L, "You have no active subscriptions or trials. Add one with /add.");
+        verify(telegram).sendMessage(eq(123L), contains("No active subscriptions or trials to total yet."));
     }
 
     @Test
@@ -193,7 +200,7 @@ class TelegramCommandServiceTests {
         when(users.getSettings(123L)).thenReturn(UserResponse.builder().reminderDaysBefore(3)
                 .defaultCurrency("LKR").build());
         commands.handleUpdate(update("/settings"));
-        verify(telegram).sendMessage(eq(123L), contains("Fallback email: not set"));
+        verify(telegram).sendMessage(eq(123L), contains("Email backup: not set"));
     }
 
     @Test
@@ -222,7 +229,41 @@ class TelegramCommandServiceTests {
         commands.handleUpdate(update("/settings email user@example.com"));
         commands.handleUpdate(update("/settings email off"));
         verify(telegram).sendMessage(eq(123L), contains("for new subscriptions"));
-        verify(telegram).sendMessage(eq(123L), contains("Fallback email saved"));
-        verify(telegram).sendMessage(123L, "Fallback email removed.");
+        verify(telegram).sendMessage(eq(123L), contains("Email backup saved"));
+        verify(telegram).sendMessage(eq(123L), contains("Email backup removed"));
+    }
+
+    @Test
+    void helpExamplesUseFutureDatesFromColomboClock() {
+        commands.handleUpdate(update("/help"));
+        ArgumentCaptor<String> reply = ArgumentCaptor.forClass(String.class);
+        verify(telegram).sendMessage(eq(123L), reply.capture());
+        assertTrue(reply.getValue().contains("/add Netflix 1500 monthly 2026-12-16"));
+        assertTrue(reply.getValue().contains("/add Spotify 590 monthly 2026-11-19 trial"));
+    }
+
+    @Test
+    void multipleCommandsInOneMessageAreRejectedWithoutCreatingAnything() {
+        commands.handleUpdate(update("/add Netflix 100 monthly 2026-11-19\n/add Spotify 100 monthly 2026-11-19"));
+        verifyNoInteractions(subscriptions, users);
+        verify(telegram).sendMessage(eq(123L), contains("separate message"));
+    }
+
+    @Test
+    void listShowsTrialEndAndCancelledStateWithoutPromisingCancelledRenewal() {
+        when(subscriptions.getSubscriptionsForUser(user)).thenReturn(List.of(
+                SubscriptionResponse.builder().id(7L).name("Trial Plan").status(SubscriptionStatus.TRIAL)
+                        .amount(new BigDecimal("1500")).currency("LKR").billingCycle(BillingCycle.MONTHLY)
+                        .nextRenewalDate(LocalDate.of(2026, 11, 19)).build(),
+                SubscriptionResponse.builder().id(8L).name("Old Plan").status(SubscriptionStatus.CANCELLED)
+                        .amount(new BigDecimal("1200")).currency("LKR").billingCycle(BillingCycle.YEARLY)
+                        .nextRenewalDate(LocalDate.of(2026, 11, 20)).build()));
+        commands.handleUpdate(update("/list"));
+        ArgumentCaptor<String> reply = ArgumentCaptor.forClass(String.class);
+        verify(telegram).sendMessage(eq(123L), reply.capture());
+        assertTrue(reply.getValue().contains("LKR 1,500.00 / month"));
+        assertTrue(reply.getValue().contains("Trial ends: 19 Nov 2026"));
+        assertTrue(reply.getValue().contains("Cancelled - reminders stopped"));
+        assertFalse(reply.getValue().contains("20 Nov 2026"));
     }
 }

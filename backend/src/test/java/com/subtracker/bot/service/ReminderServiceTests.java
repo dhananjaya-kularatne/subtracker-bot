@@ -73,8 +73,9 @@ class ReminderServiceTests {
 
         service.sendDueReminders();
 
-        verify(telegram).sendMessage(101L,
-                "Netflix renews in 3 days (2026-10-15). 100.00 LKR will be charged.\nReply /cancel 1 or /keep 1.");
+        verify(telegram).sendMessage(eq(101L), argThat(message -> message.contains("Renewal in 3 days")
+                && message.contains("Netflix · #1") && message.contains("Amount: LKR 100.00 / month")
+                && message.contains("Renewal: 15 Oct 2026") && message.contains("/cancel 1")));
         ArgumentCaptor<ReminderLog> saved = ArgumentCaptor.forClass(ReminderLog.class);
         verify(logs).save(saved.capture());
         assertSame(subscription, saved.getValue().getSubscription());
@@ -92,8 +93,9 @@ class ReminderServiceTests {
 
         service.sendDueReminders();
 
-        verify(telegram).sendMessage(101L,
-                "Your Spotify trial ends in 3 days (2026-10-15). You'll be charged 100.00 LKR unless you cancel.\nReply /cancel 1 or /keep 1.");
+        verify(telegram).sendMessage(eq(101L), argThat(message -> message.contains("trial ends in 3 days")
+                && message.contains("Spotify · #1") && message.contains("After trial: LKR 100.00 / month")
+                && message.contains("Trial ends: 15 Oct 2026")));
         assertEquals(SubscriptionStatus.TRIAL, trial.getStatus());
         assertEquals(TODAY.plusDays(3), trial.getNextRenewalDate());
         verify(subscriptions, never()).save(any());
@@ -178,8 +180,8 @@ class ReminderServiceTests {
 
         service.sendDueReminders();
 
-        verify(telegram).sendMessage(101L,
-                "Netflix renews tomorrow (2026-10-13). 100.00 USD will be charged.\nReply /cancel 1 or /keep 1.");
+        verify(telegram).sendMessage(eq(101L), argThat(message -> message.contains("Renewal tomorrow")
+                && message.contains("Amount: USD 100.00 / month") && message.contains("13 Oct 2026")));
     }
 
     @Test
@@ -190,8 +192,8 @@ class ReminderServiceTests {
 
         service.sendDueReminders();
 
-        verify(telegram).sendMessage(101L,
-                "Netflix renews today (2026-10-12). 100.00 LKR will be charged.\nReply /cancel 1 or /keep 1.");
+        verify(telegram).sendMessage(eq(101L), argThat(message -> message.contains("Renewal today")
+                && message.contains("Amount: LKR 100.00 / month") && message.contains("12 Oct 2026")));
     }
 
     private void candidates(Subscription... entries) {
@@ -220,7 +222,7 @@ class ReminderServiceTests {
         verify(logs).save(argThat(entry -> entry.getChannel() == ReminderChannel.EMAIL
                 && entry.getRenewalDate().equals(TODAY.plusDays(3))));
         verify(telegram, times(1)).sendMessage(eq(101L), anyString());
-        verify(email, times(1)).sendEmail(eq("user@example.com"), anyString(), contains("In Telegram, send /cancel 1"));
+        verify(email, times(1)).sendEmail(eq("user@example.com"), anyString(), contains("/cancel 1 - stop reminders"));
     }
 
     @Test

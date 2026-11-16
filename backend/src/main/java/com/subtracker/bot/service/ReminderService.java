@@ -80,14 +80,19 @@ public class ReminderService {
         String when = days == 0 ? "today" : days == 1 ? "tomorrow" : "in " + days + " days";
         String currency = subscription.getCurrency() != null
                 ? subscription.getCurrency() : subscription.getUser().getDefaultCurrency();
-        String charge = subscription.getAmount().toPlainString() + " " + currency;
-        String reply = "\nReply /cancel %d or /keep %d.".formatted(subscription.getId(), subscription.getId());
+        String charge = MessageFormatting.money(currency, subscription.getAmount());
+        String actions = "\n\n/keep %d - keep tracking\n/cancel %d - stop reminders\n\nTo stop actual charges, cancel with the provider too."
+                .formatted(subscription.getId(), subscription.getId());
 
         if (subscription.getStatus() == SubscriptionStatus.TRIAL) {
-            return "Your %s trial ends %s (%s). You'll be charged %s unless you cancel."
-                    .formatted(subscription.getName(), when, subscription.getNextRenewalDate(), charge) + reply;
+            return "⏳ Your trial ends %s\n\n%s · #%d\nTrial ends: %s\nAfter trial: %s / %s\n\nWant to keep it? No action is needed."
+                    .formatted(when, subscription.getName(), subscription.getId(),
+                            MessageFormatting.date(subscription.getNextRenewalDate()), charge,
+                            MessageFormatting.period(subscription.getBillingCycle())) + actions;
         }
-        return "%s renews %s (%s). %s will be charged."
-                .formatted(subscription.getName(), when, subscription.getNextRenewalDate(), charge) + reply;
+        return "🔔 Renewal %s\n\n%s · #%d\nAmount: %s / %s\nRenewal: %s\n\nHere's your heads-up before the next payment."
+                .formatted(when, subscription.getName(), subscription.getId(), charge,
+                        MessageFormatting.period(subscription.getBillingCycle()),
+                        MessageFormatting.date(subscription.getNextRenewalDate())) + actions;
     }
 }

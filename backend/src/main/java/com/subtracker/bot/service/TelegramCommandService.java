@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.Clock;
 import java.time.format.DateTimeParseException;
 import java.util.Arrays;
 import java.util.List;
@@ -33,11 +34,23 @@ public class TelegramCommandService {
     private final UserService userService;
     private final SubscriptionService subscriptionService;
     private final SubscriptionSummaryService subscriptionSummaryService;
+    private final Clock reminderClock;
 
-    private static final String ADD_USAGE = """
-            Usage: /add <name> <amount> <monthly|yearly> <renewal date> [trial]
-            Example: /add Netflix 1500 monthly 2026-11-15
-            Trial: /add Spotify 590 monthly 2026-10-15 trial""";
+    private String addUsage() {
+        LocalDate today = LocalDate.now(reminderClock);
+        return """
+                Add a subscription:
+                /add <name> <amount> <monthly|yearly> <yyyy-MM-dd> [trial]
+
+                Monthly example:
+                /add Netflix 1500 monthly %s
+
+                Free trial example:
+                /add Spotify 590 monthly %s trial
+
+                Send one command per message. Names can include spaces.
+                """.formatted(today.plusMonths(1), today.plusDays(3)).stripTrailing();
+    }
 
     private static final String DELETE_USAGE = """
             Usage: /delete <id>
@@ -57,10 +70,16 @@ public class TelegramCommandService {
         log.info("Received message from chatId {}: {}", chatId, text);
 
         // Route based on the first word of the message
-        String command = text.split("\\s+")[0].toLowerCase();
+        String command = text.split("\\s+")[0].toLowerCase(Locale.ROOT);
+
+        if (text.lines().skip(1).anyMatch(line -> line.stripLeading().startsWith("/"))) {
+            telegramApiClient.sendMessage(chatId,
+                    "Let's do one command at a time. Send each command as a separate message, and I'll confirm each one.");
+            return;
+        }
 
         switch (command) {
-            case "/start" -> handleStart(chatId);
+            case "/start", "/help" -> handleStart(chatId);
             case "/add" -> handleAdd(chatId, text);
             case "/list" -> handleList(chatId);
             case "/summary" -> handleSummary(chatId);
@@ -82,7 +101,7 @@ public class TelegramCommandService {
 
         if (subscriptions.isEmpty()) {
             telegramApiClient.sendMessage(chatId,
-                    "You have no subscriptions yet. Add one with /add.");
+                    "Your subscription list is empty. Let's add your first one.\n\n" + addUsage());
             return;
         }
 
@@ -90,18 +109,23 @@ public class TelegramCommandService {
     }
 
     private String formatSubscriptionList(List<SubscriptionResponse> subscriptions) {
-        StringBuilder sb = new StringBuilder("Your subscriptions:\n");
+        StringBuilder sb = new StringBuilder("📋 Your subscriptions\n");
         for (SubscriptionResponse sub : subscriptions) {
-            sb.append("\n#%d  %s - %s %s / %s\n     renews %s · %s\n".formatted(
-                    sub.getId(),
-                    sub.getName(),
-                    sub.getCurrency(),
-                    sub.getAmount().toPlainString(),
-                    sub.getBillingCycle().name().toLowerCase(),
-                    sub.getNextRenewalDate(),
-                    sub.getStatus().name().toLowerCase()));
+            String status = switch (sub.getStatus()) {
+                case ACTIVE -> "Active";
+                case TRIAL -> "Free trial";
+                case CANCELLED -> "Cancelled - reminders stopped";
+            };
+            String dateLabel = sub.getStatus() == SubscriptionStatus.TRIAL ? "Trial ends" : "Next renewal";
+            sb.append("\n%s · #%d\n%s / %s\nStatus: %s\n".formatted(
+                    sub.getName(), sub.getId(), MessageFormatting.money(sub.getCurrency(), sub.getAmount()),
+                    MessageFormatting.period(sub.getBillingCycle()), status));
+            if (sub.getStatus() != SubscriptionStatus.CANCELLED) {
+                sb.append("%s: %s\n".formatted(dateLabel, MessageFormatting.date(sub.getNextRenewalDate())));
+            }
         }
-        sb.append("\nRemove one with /delete <id>, e.g. /delete ").append(subscriptions.get(0).getId());
+        sb.append("\n/summary - monthly spending\n/cancel <id> - stop tracking reminders\n/delete <id> - permanently remove\n\nExample: /delete ")
+                .append(subscriptions.get(0).getId());
         return sb.toString();
     }
 
@@ -109,34 +133,37 @@ public class TelegramCommandService {
         User user = userService.findOrCreateByTelegramChatId(chatId);
         SubscriptionSummaryResponse summary = subscriptionSummaryService.getSummary(user);
         if (summary.activeSubscriptions().isEmpty() && summary.trialSubscriptions().isEmpty()) {
-            telegramApiClient.sendMessage(chatId, "You have no active subscriptions or trials. Add one with /add.");
+            telegramApiClient.sendMessage(chatId, "No active subscriptions or trials to total yet.\n\n" + addUsage());
             return;
         }
 
-        StringBuilder message = new StringBuilder("Your subscription summary:\n");
+        StringBuilder message = new StringBuilder("💰 Your monthly spending\n");
         if (summary.activeSubscriptions().isEmpty()) {
             message.append("\nNo active subscriptions.\n");
         } else {
-            message.append("\nActive subscriptions (monthly equivalents):\n");
-            for (SubscriptionSummaryResponse.Entry entry : summary.activeSubscriptions()) {
-                message.append("#%d %s - %s %s / month (%s %s / %s)\n".formatted(
-                        entry.id(), entry.name(), entry.currency(), entry.monthlyEquivalent().toPlainString(),
-                        entry.currency(), entry.amount().toPlainString(),
-                        entry.billingCycle().name().toLowerCase(Locale.ROOT)));
-            }
             message.append("\nMonthly totals (active only):\n");
             summary.monthlyTotals().forEach((currency, total) ->
-                    message.append("%s %s / month\n".formatted(currency, total.toPlainString())));
+                    message.append("%s / month\n".formatted(MessageFormatting.money(currency, total))));
+            message.append("\nActive subscriptions\n");
+            for (SubscriptionSummaryResponse.Entry entry : summary.activeSubscriptions()) {
+                message.append("\n%s · #%d\n%s / month\n".formatted(
+                        entry.name(), entry.id(), MessageFormatting.money(entry.currency(), entry.monthlyEquivalent())));
+                if (entry.billingCycle() == BillingCycle.YEARLY) {
+                    message.append("Billed %s / year\n".formatted(MessageFormatting.money(entry.currency(), entry.amount())));
+                }
+            }
+            message.append("\nYearly plans are shown as monthly equivalents. Currencies are totaled separately.\n");
         }
 
         if (!summary.trialSubscriptions().isEmpty()) {
-            message.append("\nTrials (not included in totals):\n");
+            message.append("\n⏳ Free trials (not included in totals)\n");
             for (SubscriptionSummaryResponse.Entry entry : summary.trialSubscriptions()) {
-                message.append("#%d %s - %s %s / %s after trial; trial ends %s\n".formatted(
-                        entry.id(), entry.name(), entry.currency(), entry.amount().toPlainString(),
-                        entry.billingCycle().name().toLowerCase(Locale.ROOT), entry.nextRenewalDate()));
+                message.append("\n%s · #%d\nAfter trial: %s / %s\nTrial ends: %s\n".formatted(
+                        entry.name(), entry.id(), MessageFormatting.money(entry.currency(), entry.amount()),
+                        MessageFormatting.period(entry.billingCycle()), MessageFormatting.date(entry.nextRenewalDate())));
             }
         }
+        message.append("\n/list - manage your subscriptions");
         telegramApiClient.sendMessage(chatId, message.toString().stripTrailing());
     }
 
@@ -148,7 +175,7 @@ public class TelegramCommandService {
     private void handleDelete(Long chatId, String text) {
         String[] tokens = text.split("\\s+");
 
-        if (tokens.length < 2) {
+        if (tokens.length != 2) {
             telegramApiClient.sendMessage(chatId, "Which one? I need an id.\n\n" + DELETE_USAGE);
             return;
         }
@@ -156,6 +183,9 @@ public class TelegramCommandService {
         long id;
         try {
             id = Long.parseLong(tokens[1]);
+            if (id <= 0) {
+                throw new NumberFormatException();
+            }
         } catch (NumberFormatException ex) {
             telegramApiClient.sendMessage(chatId,
                     "\"" + tokens[1] + "\" isn't a valid id.\n\n" + DELETE_USAGE);
@@ -165,7 +195,8 @@ public class TelegramCommandService {
         User user = userService.findOrCreateByTelegramChatId(chatId);
         try {
             SubscriptionResponse deleted = subscriptionService.deleteSubscription(user, id);
-            telegramApiClient.sendMessage(chatId, "🗑️ Deleted " + deleted.getName() + ".");
+            telegramApiClient.sendMessage(chatId, "🗑️ Deleted " + deleted.getName()
+                    + ".\nIt's been removed from your tracker.\n\n/list - see what's left");
         } catch (ResourceNotFoundException ex) {
             telegramApiClient.sendMessage(chatId,
                     "You don't have a subscription with id " + id + ". Run /list to see yours.");
@@ -174,18 +205,20 @@ public class TelegramCommandService {
 
     private void handleStart(Long chatId) {
         String welcomeMessage = """
-                Hi! I'll help you track your subscriptions and remind you before you get charged.
+                👋 Welcome to Subtracker
+                Keep your subscriptions in one place and get a heads-up before renewal.
 
-                /add - add a subscription
-                  e.g. /add Netflix 1500 monthly 2026-11-15
-                  add trial at the end to track a free trial
-                /list - see your subscriptions
+                Start here
+                /list - see your subscriptions and their IDs
                 /summary - see monthly spending totals per currency
-                /settings - view or change reminder days, currency, and fallback email
-                /delete - remove a subscription
-                /cancel <id> - mark a subscription cancelled and stop reminders
-                /keep <id> - acknowledge a reminder and keep tracking
-                """;
+                /settings - set reminder days, currency, and email backup
+
+                Manage a subscription
+                /keep <id> - keep tracking it
+                /cancel <id> - stop reminders in your tracker
+                /delete <id> - permanently remove it
+
+                """ + addUsage() + "\n\nNeed a hand? Send /help anytime.";
         telegramApiClient.sendMessage(chatId, welcomeMessage);
     }
 
@@ -215,14 +248,15 @@ public class TelegramCommandService {
                     : subscriptionService.keepSubscription(user, id);
             String reply;
             if (cancel) {
-                reply = "Marked %s as CANCELLED. I'll stop reminders. To stop actual charges, cancel with the provider too."
-                        .formatted(subscription.getName());
+                reply = "✅ Reminders stopped\n\n%s · #%d\nStatus: Cancelled\n\nTo stop actual charges, cancel with the provider too.\n\n/list - manage your subscriptions"
+                        .formatted(subscription.getName(), id);
             } else if (subscription.getStatus() == SubscriptionStatus.CANCELLED) {
-                reply = "%s is already cancelled in your tracker. /keep does not reactivate it."
+                reply = "%s is already cancelled in your tracker. /keep does not reactivate it.\n\nTo track it again, add a new subscription with /add."
                         .formatted(subscription.getName());
             } else {
-                reply = "Got it. I'll keep tracking %s. Next renewal: %s."
-                        .formatted(subscription.getName(), subscription.getNextRenewalDate());
+                String dateLabel = subscription.getStatus() == SubscriptionStatus.TRIAL ? "Trial ends" : "Next renewal";
+                reply = "👍 Got it. I'll keep tracking %s.\n%s: %s\n\nYou're all set. /list shows your subscriptions."
+                        .formatted(subscription.getName(), dateLabel, MessageFormatting.date(subscription.getNextRenewalDate()));
             }
             telegramApiClient.sendMessage(chatId, reply);
         } catch (ResourceNotFoundException exception) {
@@ -236,14 +270,18 @@ public class TelegramCommandService {
         if (tokens.length == 1) {
             UserResponse settings = userService.getSettings(chatId);
             telegramApiClient.sendMessage(chatId, """
-                    Your settings:
-                    Reminder: %d days before renewal
-                    Default currency: %s
-                    Fallback email: %s
+                    ⚙️ Your settings
 
+                    Remind me: %d days before renewal
+                    Default currency: %s
+                    Email backup: %s
+
+                    Change a setting
                     /settings reminder <1-30>
                     /settings currency <code>, e.g. USD
                     /settings email <address>, or off to remove it
+
+                    Email backup is used if Telegram can't deliver a reminder and email delivery is configured.
                     """.formatted(settings.getReminderDaysBefore(), settings.getDefaultCurrency(),
                     settings.getEmail() == null ? "not set" : settings.getEmail()).stripTrailing());
             return;
@@ -271,8 +309,8 @@ public class TelegramCommandService {
                 }
                 case "email" -> {
                     UserResponse settings = userService.updateEmail(chatId, tokens[2]);
-                    telegramApiClient.sendMessage(chatId, settings.getEmail() == null ? "Fallback email removed."
-                            : "Fallback email saved. Email is used when Telegram fails and email delivery is configured.");
+                    telegramApiClient.sendMessage(chatId, settings.getEmail() == null ? "Email backup removed. You'll still get Telegram reminders."
+                            : "✅ Email backup saved.\nWe'll try this address if Telegram can't deliver a reminder and email delivery is configured.\n\n/settings - check your preferences");
                 }
                 default -> telegramApiClient.sendMessage(chatId, "Unknown setting. Use /settings to see the options.");
             }
@@ -295,7 +333,7 @@ public class TelegramCommandService {
 
         // /add + at least a one-word name + amount + cycle + date = 5 tokens minimum
         if (argumentEnd < 5) {
-            telegramApiClient.sendMessage(chatId, "That command looks incomplete.\n\n" + ADD_USAGE);
+            telegramApiClient.sendMessage(chatId, "That command looks incomplete. Here's how to add one.\n\n" + addUsage());
             return;
         }
 
@@ -322,7 +360,7 @@ public class TelegramCommandService {
         } catch (CommandFormatException ex) {
             // Malformed argument - tell the user what was wrong and how to fix it,
             // rather than letting the exception bubble up and drop the message silently.
-            telegramApiClient.sendMessage(chatId, ex.getMessage() + "\n\n" + ADD_USAGE);
+            telegramApiClient.sendMessage(chatId, ex.getMessage() + "\n\n" + addUsage());
         }
     }
 
@@ -358,18 +396,17 @@ public class TelegramCommandService {
     }
 
     private String formatAddConfirmation(SubscriptionResponse sub) {
-        return "✅ Added %s - %s %s / %s, renews %s".formatted(
-                sub.getName(),
-                sub.getCurrency(),
-                sub.getAmount().toPlainString(),
-                sub.getBillingCycle().name().toLowerCase(),
-                sub.getNextRenewalDate())
-                + (sub.getStatus() == SubscriptionStatus.TRIAL ? " (trial)" : "");
+        boolean trial = sub.getStatus() == SubscriptionStatus.TRIAL;
+        return "✅ Added %s\n\nSubscription #%d\n%s: %s / %s\n%s: %s\nStatus: %s\n\n/list - see all subscriptions\n/summary - check your monthly spending"
+                .formatted(sub.getName(), sub.getId(), trial ? "After trial" : "Price",
+                        MessageFormatting.money(sub.getCurrency(), sub.getAmount()),
+                        MessageFormatting.period(sub.getBillingCycle()), trial ? "Trial ends" : "Next renewal",
+                        MessageFormatting.date(sub.getNextRenewalDate()), trial ? "Free trial" : "Active");
     }
 
     private void handleUnknownCommand(Long chatId) {
         telegramApiClient.sendMessage(chatId,
-                "Sorry, I don't recognize that command yet. Try /start to see what I can do.");
+                "I couldn't match that command. Start it with / and send one command per message.\n\n/list - your subscriptions\n/add - add a subscription\n/help - all commands");
     }
 
     /**

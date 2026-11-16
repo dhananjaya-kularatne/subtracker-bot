@@ -66,7 +66,8 @@ class SubscriptionRenewalServiceTests {
         assertEquals(SubscriptionStatus.ACTIVE, subscription.getStatus());
         assertEquals(TODAY.plusMonths(1), subscription.getNextRenewalDate());
         assertNull(subscription.getPendingTrialConversionDate());
-        verify(telegram, times(1)).sendMessage(eq(123L), contains("is now ACTIVE"));
+        verify(telegram, times(1)).sendMessage(eq(123L), argThat(message -> message.contains("Status: Active")
+                && message.contains("Trial ended: 12 Oct 2026") && message.contains("Next renewal: 12 Nov 2026")));
         ArgumentCaptor<ReminderLog> saved = ArgumentCaptor.forClass(ReminderLog.class);
         verify(logs).save(saved.capture());
         assertEquals(ReminderType.TRIAL_CONVERSION, saved.getValue().getType());

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{TITLE}}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f1f5f9;color:#172b3a;font-family:Arial,Helvetica,sans-serif;">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;">{{TITLE}}. Your subscription details and next steps are inside.</div>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#f1f5f9;table-layout:fixed;">
+    <tr><td align="center" style="padding:32px 16px;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;max-width:600px;table-layout:fixed;">
+        <tr><td style="padding:0 0 20px;color:#0f766e;font-size:20px;font-weight:bold;">Subtracker <span style="font-weight:normal;color:#64748b;font-size:13px;"> / a little heads-up</span></td></tr>
+        <tr><td style="background-color:#ffffff;border:1px solid #dce5ed;border-top:5px solid #0f766e;border-radius:12px;padding:28px;">
+          <p style="margin:0 0 12px;color:#0f766e;font-size:12px;font-weight:bold;letter-spacing:1px;">YOUR SUBSCRIPTIONS, IN CHECK</p>
+          <h1 style="margin:0 0 20px;font-size:25px;line-height:1.35;font-weight:bold;overflow-wrap:anywhere;">{{TITLE}}</h1>
+          <div style="background-color:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px;overflow-wrap:anywhere;">{{BODY}}</div>
+          <p style="margin:24px 0 18px;font-size:14px;line-height:1.6;color:#475569;">Manage this subscription in Telegram. Your bot has the details and commands ready.</p>
+          <table role="presentation" cellspacing="0" cellpadding="0"><tr><td bgcolor="#0f766e" style="border-radius:7px;">
+            <a href="{{BOT_URL}}" style="display:inline-block;padding:14px 20px;color:#ffffff;font-size:15px;font-weight:bold;text-decoration:none;border:1px solid #0f766e;border-radius:7px;">Open Subtracker in Telegram</a>
+          </td></tr></table>
+          <p style="margin:18px 0 0;font-size:12px;line-height:1.6;color:#64748b;">If the button doesn't open, use <a href="{{BOT_URL}}" style="color:#0f766e;">this Telegram link</a>. Send commands in the bot chat, rather than replying to this email.</p>
+        </td></tr>
+        <tr><td style="padding:20px 4px;font-size:12px;line-height:1.7;color:#64748b;">
+          This email is your backup when Telegram can't deliver a notification.<br>
+          To remove email backup, send <strong>/settings email off</strong> in Telegram.<br>
+          Subtracker tracks subscriptions. To stop actual charges, cancel with the provider.
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>

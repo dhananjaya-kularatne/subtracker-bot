@@ -20,7 +20,7 @@ public class NotificationDeliveryService {
         }
         if (user.getEmail() != null && !user.getEmail().isBlank()) {
             String emailText = message.replace("\nReply /", "\nIn Telegram, send /")
-                    + "\n\nManage your subscriptions through the Subtracker bot in Telegram.";
+                    + "\n\nUse the commands above in Telegram to manage your subscription.";
             if (brevoEmailClient.sendEmail(user.getEmail(), subject, emailText)) {
                 return Optional.of(ReminderChannel.EMAIL);
             }

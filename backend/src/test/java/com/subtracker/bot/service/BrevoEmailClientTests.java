@@ -1,6 +1,7 @@
 package com.subtracker.bot.service;
 
 import com.subtracker.bot.config.BrevoConfig;
+import com.subtracker.bot.config.TelegramConfig;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -21,7 +22,7 @@ class BrevoEmailClientTests {
     private BrevoEmailClient client;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws IOException {
         RestClient.Builder builder = RestClient.builder();
         server = MockRestServiceServer.bindTo(builder).build();
         config = mock(BrevoConfig.class);
@@ -29,18 +30,23 @@ class BrevoEmailClientTests {
         when(config.getApiKey()).thenReturn("test-key");
         when(config.getSenderEmail()).thenReturn("sender@example.com");
         when(config.getSenderName()).thenReturn("Subtracker Bot");
-        client = new BrevoEmailClient(builder.build(), config);
+        TelegramConfig telegram = mock(TelegramConfig.class);
+        when(telegram.getBotUsername()).thenReturn("subtracker_dj_bot");
+        client = new BrevoEmailClient(builder.build(), config, new NotificationEmailTemplate(telegram));
     }
 
     @Test
-    void acceptedEmailPostsExpectedHeaderAndPlainTextPayload() {
+    void acceptedEmailPostsHtmlAndPlainTextWithWorkingTelegramLink() {
         server.expect(requestTo("https://api.brevo.com/v3/smtp/email"))
                 .andExpect(header("api-key", "test-key"))
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(content().json("""
-                        {"sender":{"email":"sender@example.com","name":"Subtracker Bot"},
-                         "to":[{"email":"user@example.com"}],"subject":"Reminder","textContent":"Renewal tomorrow"}
-                        """))
+                .andExpect(jsonPath("$.sender.email").value("sender@example.com"))
+                .andExpect(jsonPath("$.to[0].email").value("user@example.com"))
+                .andExpect(jsonPath("$.subject").value("Reminder"))
+                .andExpect(jsonPath("$.textContent").value(org.hamcrest.Matchers.containsString("Renewal tomorrow")))
+                .andExpect(jsonPath("$.textContent").value(org.hamcrest.Matchers.containsString("https://t.me/subtracker_dj_bot")))
+                .andExpect(jsonPath("$.htmlContent").value(org.hamcrest.Matchers.containsString("Open Subtracker in Telegram")))
+                .andExpect(jsonPath("$.htmlContent").value(org.hamcrest.Matchers.containsString("Renewal tomorrow")))
                 .andRespond(withStatus(HttpStatus.CREATED));
         assertTrue(client.sendEmail("user@example.com", "Reminder", "Renewal tomorrow"));
         server.verify();

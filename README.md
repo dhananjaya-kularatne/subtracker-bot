@@ -284,11 +284,3 @@ backend/
     templates/notification-email.html
   src/test/java/com/subtracker/bot/
 ```
-
-## Current limits and next steps
-
-This is a working local backend project, not a production deployment. The next steps are authentication and REST ownership enforcement, webhook verification and selectable update transport, distributed notification coordination, versioned database migrations instead of `ddl-auto=update`, and deployment configuration.
-
-Long polling currently starts automatically. The `/health` endpoint, provider subscription cancellation, exchange-rate conversion, and editing existing subscriptions are not implemented. Email backup depends on the sender configuration, provider permissions, and delivery status.
-
-Never commit real tokens, passwords, private configuration files, inbox screenshots, or logs containing credentials. The repository includes ignore rules for local profiles and `.env` files; these are a convenience, not a substitute for checking what is staged.

@@ -4,7 +4,9 @@ A Telegram bot for keeping track of subscriptions, upcoming renewals, free trial
 
 **Java 21 · Spring Boot 4.1 · MySQL · Spring Data JPA · Telegram Bot API · Brevo**
 
-Developed and tested locally. Cloud deployment is not configured yet. The backend lives in [`backend/`](backend).
+[Watch the live Telegram demo on YouTube](https://youtu.be/QYdJOTTzsFc)
+
+The demo shows how to add subscriptions, check monthly spending, track a free trial, and change reminder settings directly in Telegram.
 
 ## Features
 
@@ -37,15 +39,6 @@ To stop actual charges, cancel with the provider too.
 
 The example dates and IDs are illustrative. Use your own subscription dates and the IDs returned by `/list`.
 
-<details>
-<summary>Email layout preview</summary>
-
-The preview uses sample subscription data and contains no account credentials.
-
-<img src="docs/images/email-preview.png" alt="Subtracker HTML reminder email with subscription details and a button to open Telegram" width="560">
-
-</details>
-
 ## Architecture
 
 ```mermaid
@@ -72,6 +65,10 @@ The application calls Telegram and Brevo through Spring's `RestClient`, without 
 | `User` | Telegram chat ID, reminder window, default currency, optional email |
 | `Subscription` | Owner, amount, currency, billing cycle, status, renewal date, pending trial notice |
 | `ReminderLog` | Notification type, channel, renewal date, and time of successful acceptance |
+
+## Demo deployment
+
+The Spring Boot JAR ran on Azure App Service (Linux, Java 21). Azure Database for MySQL Flexible Server stored the application data, and Azure Key Vault held the database password and integration credentials.
 
 ## Run locally
 
